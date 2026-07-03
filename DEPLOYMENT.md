@@ -19,9 +19,15 @@ maintenir).
 
 ### a. Clé App Store Connect API
 App Store Connect → **Users and Access → Integrations → App Store Connect API**
-→ **Generate API Key** (rôle **App Manager**).
+→ **Generate API Key** — rôle **Admin** (⚠️ requis).
 - Télécharge le fichier `AuthKey_XXXXXXXXXX.p8` (**téléchargeable une seule fois**).
 - Note le **Key ID** et l'**Issuer ID** (en haut de la page).
+
+> **Pourquoi Admin ?** La signature de distribution « cloud-managed » (certificat
+> App Store créé automatiquement par Xcode via la clé) n'est autorisée qu'aux
+> clés **Admin** / **Account Holder**. Une clé **App Manager** peut enregistrer
+> les Bundle IDs et téléverser des builds, mais échoue à l'export avec
+> « Cloud signing permission error ».
 
 ### b. Team ID
 [developer.apple.com/account](https://developer.apple.com/account) → **Membership**

@@ -45,6 +45,15 @@ def asc_api_key
   )
 end
 
+# macOS 15+/Xcode : l'étape « Create IPA » de l'export lance `rsync` avec
+# l'option Apple `--extended-attributes` (`-E`). Si un rsync Homebrew (3.x) est
+# en tête du PATH, il est utilisé côté serveur, ne connaît pas cette option et
+# fait échouer l'export avec un « Copy failed » opaque. On force le rsync
+# système (openrsync, /usr/bin) en tête du PATH.
+def force_system_rsync
+  ENV["PATH"] = "/usr/bin:#{ENV['PATH']}" unless ENV["PATH"].to_s.start_with?("/usr/bin:")
+end
+
 # Chemin fichier .p8 pour `-authenticationKeyPath` de xcodebuild (archive + export).
 # Utilise ASC_KEY_P8_PATH si fourni, sinon décode ASC_KEY_P8_BASE64 dans un temp.
 def asc_key_file
@@ -61,6 +70,7 @@ end
 # Compile une cible et l'envoie sur TestFlight (groupe de test interne).
 def build_and_ship(scheme:, app_identifier:, api_key:)
   setup_ci # crée un trousseau temporaire en CI (no-op en local)
+  force_system_rsync
 
   # Auth clé API passée explicitement à xcodebuild pour l'archive ET l'export
   # (sinon l'export retombe sur le compte Apple ID et échoue en non-interactif).
@@ -99,6 +109,19 @@ platform :ios do
   desc "iPhone/iPad → TestFlight (tests internes)"
   lane :beta_ios do
     build_and_ship(scheme: IOS_SCHEME, app_identifier: IOS_APP_ID, api_key: asc_api_key)
+  end
+
+  desc "Envoie un .ipa déjà construit (IPA_PATH) → TestFlight (tests internes)"
+  lane :upload_ios do
+    upload_to_testflight(
+      api_key: asc_api_key,
+      ipa: File.expand_path(ENV.fetch("IPA_PATH")),
+      app_identifier: IOS_APP_ID,
+      distribute_external: false,
+      groups: INTERNAL_GROUPS,
+      skip_submission: true,
+      skip_waiting_for_build_processing: false
+    )
   end
 
   desc "Apple TV → TestFlight (tests internes)"

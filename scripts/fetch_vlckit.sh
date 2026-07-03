@@ -36,8 +36,27 @@ fetch() {
   echo "✅ Vendor/$framework installé."
 }
 
+# Les binaires VideoLAN embarquent des tranches 32 bits (armv7/armv7s) dans la
+# slice device de MobileVLCKit. Une app arm64 (iOS 17+) qui les embarque fait
+# échouer l'empaquetage App Store avec un « Copy failed » opaque à l'export.
+# On amincit donc le binaire device en arm64 uniquement (idempotent).
+strip_legacy_archs() {
+  local fw="$DEST/MobileVLCKit.xcframework/ios-arm64_armv7_armv7s/MobileVLCKit.framework"
+  local bin="$fw/MobileVLCKit"
+  [ -f "$bin" ] || return 0
+  if lipo -archs "$bin" 2>/dev/null | tr ' ' '\n' | grep -qx armv7; then
+    echo "→ Amincissement MobileVLCKit (device) → arm64…"
+    lipo "$bin" -thin arm64 -output "$bin.tmp" && mv "$bin.tmp" "$bin"
+    rm -rf "$fw/_CodeSignature"   # signature obsolète : Xcode re-signe à l'embed
+    echo "✅ MobileVLCKit device = arm64 ($(lipo -archs "$bin"))."
+  else
+    echo "✓ MobileVLCKit device déjà arm64 uniquement."
+  fi
+}
+
 fetch "TVVLCKit"
 fetch "MobileVLCKit"
+strip_legacy_archs
 
 echo ""
 echo "Lance maintenant : xcodegen generate"
