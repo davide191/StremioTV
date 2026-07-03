@@ -88,10 +88,20 @@ platform :ios do
     build_and_ship(scheme: TVOS_SCHEME, app_identifier: TVOS_APP_ID, api_key: key)
   end
 
-  desc "Enregistre (une fois) les deux fiches d'app dans App Store Connect"
+  # Créer une FICHE d'app n'est pas possible via clé App Store Connect API
+  # (limitation Apple). Voir DEPLOYMENT.md : soit l'UI web (recommandé), soit ce
+  # lane avec un Apple ID (auth 2FA interactive). Les Bundle IDs, eux, se créent
+  # via la clé API — voir scripts/register_bundle_ids.rb.
+  desc "Crée (une fois) les deux fiches d'app — nécessite un Apple ID (2FA)"
   lane :register_apps do
-    key = asc_api_key
-    produce(app_identifier: IOS_APP_ID,  app_name: "StremioTV",        api_key: key, platforms: ["ios"])
-    produce(app_identifier: TVOS_APP_ID, app_name: "StremioTV Apple TV", api_key: key, platforms: ["tvos"])
+    user = ENV["APPLE_ID"]
+    UI.user_error!("APPLE_ID requis (e-mail Apple ID) — la création de fiche d'app n'accepte pas la clé API.") if user.to_s == ""
+    ios_name  = ENV["IOS_APP_NAME"]  || "StremioTV"
+    tvos_name = ENV["TVOS_APP_NAME"] || "StremioTV Apple TV"
+    opts = { username: user, team_id: ENV["APPLE_TEAM_ID"], language: "en-US" }
+    opts[:company_name] = ENV["COMPANY_NAME"] if ENV["COMPANY_NAME"].to_s != ""
+
+    produce(app_identifier: IOS_APP_ID,  app_name: ios_name,  platforms: ["ios"],  **opts)
+    produce(app_identifier: TVOS_APP_ID, app_name: tvos_name, platforms: ["tvos"], **opts)
   end
 end

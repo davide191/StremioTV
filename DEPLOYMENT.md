@@ -27,19 +27,29 @@ App Store Connect → **Users and Access → Integrations → App Store Connect 
 [developer.apple.com/account](https://developer.apple.com/account) → **Membership**
 → **Team ID** (10 caractères).
 
-### c. Fiches d'app
-Depuis la racine du repo, avec les 4 variables d'environnement ci-dessous
-exportées :
-
+### c. Bundle IDs (via clé API — idempotent)
 ```bash
 bundle install
-bundle exec fastlane register_apps
+ASC_KEY_ID=... ASC_ISSUER_ID=... P8_PATH=~/Downloads/AuthKey_XXXX.p8 \
+  bundle exec ruby scripts/register_bundle_ids.rb
 ```
+> S'enregistrent aussi automatiquement au 1er build (`-allowProvisioningUpdates`).
 
-> Ou manuellement : App Store Connect → **Apps → +** → une app iOS
-> (`com.nicolasbataille.stremiotv`) et une app tvOS
-> (`com.nicolasbataille.stremiotv.tv`). Les Bundle IDs s'enregistrent
-> automatiquement au 1er build (`-allowProvisioningUpdates`).
+### d. Fiches d'app (⚠️ UI web — pas la clé API)
+Créer une *fiche d'app* n'est **pas** possible via clé API (limitation Apple).
+Comme iOS et tvOS ont des Bundle IDs différents, ce sont **deux fiches** :
+
+App Store Connect → **Apps → ➕ New App**, deux fois :
+
+| # | Plateforme | Bundle ID | Nom |
+|---|-----------|-----------|-----|
+| 1 | **iOS** | `com.nicolasbataille.stremiotv` | StremioTV |
+| 2 | **tvOS** | `com.nicolasbataille.stremiotv.tv` | StremioTV Apple TV |
+
+(SKU = un texte unique quelconque, ex. le Bundle ID.)
+
+> Alternative CLI (Apple ID + 2FA interactive, pas la clé API) :
+> `APPLE_ID=toi@mail APPLE_TEAM_ID=... bundle exec fastlane register_apps`
 
 ### d. Testeurs internes
 Pour **chaque** app : TestFlight → **Internal Testing** → crée un groupe
