@@ -1,0 +1,6 @@
+# Identifiants d'app (surchargés par variables d'environnement si besoin).
+app_identifier(ENV["IOS_BUNDLE_ID"] || "com.nicolasbataille.stremiotv")
+team_id(ENV["APPLE_TEAM_ID"])
+
+# L'authentification passe par une clé App Store Connect API (voir Fastfile) :
+# pas d'apple_id / mot de passe requis.

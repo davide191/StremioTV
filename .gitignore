@@ -15,3 +15,21 @@ Vendor/
 
 # Outils locaux
 .osgrep/
+.osgrep
+
+# fastlane / livraison
+*.ipa
+*.dSYM.zip
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/test_output/
+fastlane/README.md
+vendor/bundle/
+.bundle/
+
+# Secrets (ne JAMAIS committer)
+*.p8
+*.mobileprovision
+*.p12
+.env
+.env.*
