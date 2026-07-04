@@ -20,7 +20,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Build & upload to TestFlight
+    name: Build & upload iOS to TestFlight
     runs-on: macos-15
     timeout-minutes: 90
     steps:
@@ -58,8 +58,10 @@ jobs:
       - name: Compute build number
         run: echo "BUILD_NUMBER=$(( ${{ github.run_number }} * 100 + ${{ github.run_attempt }} ))" >> "$GITHUB_ENV"
 
-      - name: Deploy to TestFlight
-        run: bundle exec fastlane beta
+      # iOS uniquement pour l'instant : la fiche d'app tvOS n'existe pas encore.
+      # Repasser sur `fastlane beta` (iOS + tvOS) une fois la fiche tvOS créée.
+      - name: Deploy to TestFlight (iOS)
+        run: bundle exec fastlane beta_ios
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
