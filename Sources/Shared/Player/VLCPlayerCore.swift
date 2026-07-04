@@ -26,8 +26,16 @@ class VLCPlayerCoreController: UIViewController, VLCMediaPlayerDelegate {
     let onClose: () -> Void
     private let prefs = PlaybackPreferences()
 
-    // Options libVLC d'init : taille des sous-titres depuis les réglages (défaut ~65 %).
-    let player = VLCMediaPlayer(options: ["--sub-text-scale=\(PlaybackPreferences().subtitleScale)"])
+    // Options libVLC d'init :
+    // - taille des sous-titres depuis les réglages (défaut ~65 %) ;
+    // - `--no-mouse-events` : sinon la vout iOS installe son propre
+    //   UITapGestureRecognizer sur la superview du drawable (notre vue racine)
+    //   dès la première image rendue, qui gagne l'arbitrage des gestes et
+    //   avale tous les taps — impossible de réafficher les contrôles.
+    let player = VLCMediaPlayer(options: [
+        "--sub-text-scale=\(PlaybackPreferences().subtitleScale)",
+        "--no-mouse-events",
+    ])
     let videoView = UIView()
     let spinner = UIActivityIndicatorView(style: .large)
     let trackController = TrackController()
