@@ -24,9 +24,9 @@ fetch() {
     return
   fi
   local tmp; tmp="$(mktemp -d)"
-  echo "→ Téléchargement $kit $VERSION…"
+  echo "→ Téléchargement $kit ${VERSION}…"
   curl -L --fail -o "$tmp/kit.tar.xz" "$BASE_URL/$kit-$VERSION.tar.xz"
-  echo "→ Extraction $kit…"
+  echo "→ Extraction ${kit}…"
   tar -xJf "$tmp/kit.tar.xz" -C "$tmp"
   local src; src="$(find "$tmp" -maxdepth 3 -name "$framework" -type d | head -1)"
   [ -n "$src" ] || { echo "✗ $framework introuvable dans l'archive"; exit 1; }
