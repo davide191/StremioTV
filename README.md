@@ -1,8 +1,16 @@
 # StremioTV
 
-Client **tvOS natif** (SwiftUI + **VLCKit**) qui se connecte à **ton compte Stremio**,
-récupère **tous tes add-ons** (dont **RealDebrid**) et lit le contenu directement
-sur l'Apple TV — à la télécommande, **sans mirroring**.
+Clients **natifs Apple** (SwiftUI + **VLCKit**) qui se connectent à **ton compte
+Stremio**, récupèrent **tous tes add-ons** (dont **RealDebrid**) et lisent le
+contenu directement sur l'appareil — **sans mirroring** :
+
+- **iPhone / iPad** (`StremioTV-iOS`) : app universelle **tactile** (navigation
+  adaptative onglets/barre latérale, lecteur tactile, scrubber, feuilles de
+  pistes) — livrée sur **TestFlight**.
+- **Apple TV** (`StremioTV`) : app **télécommande / focus** d'origine.
+
+Le code métier (modèles, services, view-models, cœur de lecture VLC) est
+**partagé** entre les deux plateformes ; seules les vues diffèrent.
 
 > Pourquoi ce projet ? En juin 2026, Stremio a été retiré de l'App Store (iOS/tvOS)
 > et l'« IPA tvOS officielle » annoncée n'est pas distribuée proprement (la page
@@ -44,10 +52,27 @@ Contrat de l'API compte vérifié à la source (`Stremio/stremio-core`) :
 
 ```bash
 cd ~/Projects/StremioTV
-bash scripts/fetch_vlckit.sh  # récupère le binaire VLC (~560 Mo) dans Vendor/ (une fois)
+bash scripts/fetch_vlckit.sh  # récupère TVVLCKit + MobileVLCKit (~1 Go) dans Vendor/ (une fois)
 xcodegen generate             # (re)génère StremioTV.xcodeproj depuis project.yml
 open StremioTV.xcodeproj
 ```
+
+Deux schémas sont disponibles :
+
+- **`StremioTV-iOS`** → iPhone / iPad (simulateur ou appareil).
+- **`StremioTV`** → Apple TV (simulateur ou appareil).
+
+```bash
+# Build rapide iOS (simulateur) sans signature
+xcodebuild build -scheme StremioTV-iOS \
+  -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO
+
+# (Ré)générer l'icône iOS si besoin
+python3 scripts/make_ios_icon.py
+```
+
+> **Déploiement TestFlight** (iOS + tvOS, tests internes, automatique au push
+> d'un tag `v*`) : voir **[DEPLOYMENT.md](DEPLOYMENT.md)**.
 
 > Relance `xcodegen generate` après tout ajout/suppression de fichier dans
 > `Sources/`, `Tests/` ou `UITests/`.
@@ -88,24 +113,40 @@ l'app les affiche mais les marque non lisibles (il faudrait le streaming-server
 
 ```
 Sources/
-  StremioTVApp.swift          @main, injecte SessionStore + AddonRepository
-  Models/                     Manifest, MetaItem, StreamItem, InstalledAddon,
-                              StremioAPI (login/collection), PlayableURL
-  Services/
-    AddonClient.swift         protocole add-on (manifest/catalog/meta/stream, skip, search)
-    StremioAPIClient.swift     API compte (login, loginWithToken, addonCollectionGet, logout)
-    KeychainStore.swift        stockage sécurisé de l'authKey
-    AddonRepository.swift      add-ons compte + manuels, persistés
-    SessionStore.swift         état d'auth + chargement des add-ons
-  ViewModels/                 Home, Search, CatalogGrid, Detail (@Observable, @MainActor)
-  Views/                      Root, Login, MainTab, Home, CatalogRow, CatalogGrid,
-                              Search, MetaDetail, StreamsList, Player (VLC), Settings, PosterCard
-  Assets.xcassets             App Icon & Top Shelf (brand assets tvOS)
-Vendor/TVVLCKit.xcframework   lecteur VLC tvOS (récupéré via scripts/fetch_vlckit.sh)
+  Shared/                     ── code commun iOS + tvOS ──
+    Models/                   Manifest, MetaItem, StreamItem, InstalledAddon,
+                              LibraryItem, PlaybackRequest/Preferences, StremioAPI…
+    Services/                 AddonClient, StremioAPIClient, KeychainStore,
+                              AddonRepository, SessionStore, LibraryStore
+    ViewModels/               Home, Search, CatalogGrid, Detail (@Observable)
+    Common/                   Theme (couleurs/backdrop/langues), TrackController
+    Player/
+      VLCPlayerCore.swift     cœur de lecture VLC partagé (UIViewController) :
+                              reprise, pistes audio/sous-titres, progression.
+                              import conditionnel TVVLCKit / MobileVLCKit.
+  tvOS/                       ── habillage Apple TV (focus / télécommande) ──
+    StremioTVApp.swift        @main tvOS
+    Views/                    Root, MainTab, Home, MetaDetail, StreamsList,
+                              PlayerView (overlay + télécommande), Settings…
+    Assets.xcassets           App Icon & Top Shelf (brand assets tvOS)
+  iOS/                        ── habillage iPhone / iPad (tactile) ──
+    StremioApp.swift          @main iOS
+    Views/                    RootView, MainShell (onglets/sidebar adaptatifs),
+                              HomeScreen, SearchScreen, LibraryScreen,
+                              CatalogGridScreen, DetailScreen, StreamsScreen,
+                              PlayerView (contrôles tactiles), TrackSelectionSheet,
+                              SettingsScreen, LoginScreen, PosterComponents…
+    Assets.xcassets           AppIcon (icône iOS générée)
+Vendor/
+  TVVLCKit.xcframework        lecteur VLC tvOS   (scripts/fetch_vlckit.sh)
+  MobileVLCKit.xcframework    lecteur VLC iOS    (scripts/fetch_vlckit.sh)
 Tests/                        XCTest unitaires (décodage + logique + repository)
-UITests/                      XCUITest (login + parcours invité)
-scripts/fetch_vlckit.sh       récupère le binaire VLC
-scripts/make_assets.py        génère les brand assets
+UITests/                      XCUITest (login + parcours invité) — cible tvOS
+fastlane/                     Fastfile/Appfile — livraison TestFlight (voir DEPLOYMENT.md)
+.github/workflows/testflight.yml  CI : build + upload TestFlight au tag v*
+scripts/fetch_vlckit.sh       récupère TVVLCKit + MobileVLCKit
+scripts/make_assets.py        génère les brand assets tvOS
+scripts/make_ios_icon.py      génère l'icône iOS
 scripts/test_account.sh       teste le pipeline compte+RealDebrid (sortie caviardée)
 ```
 

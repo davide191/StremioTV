@@ -21,4 +21,13 @@ struct SubtitleItem: Codable, Sendable, Identifiable {
 
     /// Libellé lisible pour le menu (nom de langue normalisé).
     var displayLanguage: String { lang.isEmpty ? "Sous-titre" : LanguageNames.display(lang) }
+
+    /// Construit un sous-titre depuis une URL locale/distante (le membre
+    /// `subtitleId` étant privé, l'init mémberwise l'est aussi : on l'expose ici
+    /// pour, p. ex., rattacher un sous-titre téléchargé en `file://`).
+    init(url: String, lang: String) {
+        self.url = url
+        self.lang = lang
+        self.subtitleId = nil
+    }
 }

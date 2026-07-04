@@ -1,0 +1,159 @@
+# StremioTV — livraison TestFlight (tests internes uniquement).
+#
+# Authentification : clé App Store Connect API (.p8) fournie en base64 via
+# variable d'environnement — non interactif, sans 2FA (adapté à la CI).
+# Signature : automatique + `-allowProvisioningUpdates` (certificats/profils
+# « cloud-managed » créés et réutilisés par Xcode via la clé API — aucun dépôt
+# de certificats à maintenir).
+#
+# Variables d'environnement attendues :
+#   ASC_KEY_ID          identifiant de la clé API
+#   ASC_ISSUER_ID       identifiant de l'émetteur (Issuer ID)
+#   ASC_KEY_P8_BASE64   contenu du fichier .p8 encodé en base64
+#   APPLE_TEAM_ID       identifiant d'équipe Apple Developer (10 caractères)
+# Optionnelles :
+#   BUILD_NUMBER        numéro de build (ex. numéro de run CI) — défaut 1
+#   MARKETING_VERSION   version marketing (ex. 0.2.0, ou tag "v0.2.0")
+
+require "base64"
+require "tmpdir"
+require "shellwords"
+
+IOS_SCHEME  = "StremioTV-iOS"
+TVOS_SCHEME = "StremioTV"
+IOS_APP_ID  = ENV["IOS_BUNDLE_ID"]  || "com.nicolasbataille.stremiotv"
+TVOS_APP_ID = ENV["TVOS_BUNDLE_ID"] || "com.nicolasbataille.stremiotv.tv"
+TEAM_ID     = ENV["APPLE_TEAM_ID"]
+
+# Version marketing : accepte "0.2.0" ou "v0.2.0" (tag git). Toute valeur non
+# conforme (ex. nom de branche "main" sur un run manuel) retombe sur le défaut,
+# car CFBundleShortVersionString doit être 1 à 3 entiers séparés par des points.
+raw_marketing     = (ENV["MARKETING_VERSION"] || "0.2.0").sub(/^v/, "")
+MARKETING_VERSION = raw_marketing =~ /\A\d+(\.\d+){0,2}\z/ ? raw_marketing : "0.2.0"
+BUILD_NUMBER      = ENV["BUILD_NUMBER"] || "1"
+
+# Groupe(s) de test interne à qui distribuer le build (doit exister par app).
+INTERNAL_GROUPS = (ENV["TESTFLIGHT_GROUPS"] || "Test interne").split(",").map(&:strip)
+
+def asc_api_key
+  app_store_connect_api_key(
+    key_id: ENV.fetch("ASC_KEY_ID"),
+    issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+    key_content: ENV.fetch("ASC_KEY_P8_BASE64"),
+    is_key_content_base64: true,
+    in_house: false
+  )
+end
+
+# macOS 15+/Xcode : l'étape « Create IPA » de l'export lance `rsync` avec
+# l'option Apple `--extended-attributes` (`-E`). Si un rsync Homebrew (3.x) est
+# en tête du PATH, il est utilisé côté serveur, ne connaît pas cette option et
+# fait échouer l'export avec un « Copy failed » opaque. On force le rsync
+# système (openrsync, /usr/bin) en tête du PATH.
+def force_system_rsync
+  ENV["PATH"] = "/usr/bin:#{ENV['PATH']}" unless ENV["PATH"].to_s.start_with?("/usr/bin:")
+end
+
+# Chemin fichier .p8 pour `-authenticationKeyPath` de xcodebuild (archive + export).
+# Utilise ASC_KEY_P8_PATH si fourni, sinon décode ASC_KEY_P8_BASE64 dans un temp.
+def asc_key_file
+  if ENV["ASC_KEY_P8_PATH"].to_s != ""
+    File.expand_path(ENV["ASC_KEY_P8_PATH"])
+  else
+    path = File.join(Dir.tmpdir, "asc_api_key_#{ENV.fetch('ASC_KEY_ID')}.p8")
+    File.write(path, Base64.decode64(ENV.fetch("ASC_KEY_P8_BASE64")))
+    File.chmod(0o600, path)
+    path
+  end
+end
+
+# Compile une cible et l'envoie sur TestFlight (groupe de test interne).
+def build_and_ship(scheme:, app_identifier:, api_key:)
+  setup_ci # crée un trousseau temporaire en CI (no-op en local)
+  force_system_rsync
+
+  # Auth clé API passée explicitement à xcodebuild pour l'archive ET l'export
+  # (sinon l'export retombe sur le compte Apple ID et échoue en non-interactif).
+  auth = "-authenticationKeyPath #{asc_key_file.shellescape} " \
+         "-authenticationKeyID #{ENV.fetch('ASC_KEY_ID')} " \
+         "-authenticationKeyIssuerID #{ENV.fetch('ASC_ISSUER_ID')} " \
+         "-allowProvisioningUpdates"
+
+  build_app(
+    scheme: scheme,
+    export_method: "app-store",
+    output_directory: "build",
+    output_name: "#{scheme}.ipa",
+    # Sortie xcodebuild brute (chaîne vide) : évite xcpretty, cassé sous Ruby 4.x
+    # (« uninitialized constant Gem::Resolver::APISet::GemParser »), dont le crash
+    # au démarrage tuait l'archive via `set -o pipefail`.
+    xcodebuild_formatter: "",
+    # gym applique aussi `xcargs` à l'étape d'export : on n'y met l'auth qu'UNE
+    # fois ici (dupliquer via export_xcargs => "may only be provided once").
+    xcargs: "#{auth} DEVELOPMENT_TEAM=#{TEAM_ID} " \
+            "MARKETING_VERSION=#{MARKETING_VERSION} CURRENT_PROJECT_VERSION=#{BUILD_NUMBER}",
+    export_options: {
+      method: "app-store",
+      teamID: TEAM_ID,
+      signingStyle: "automatic"
+    }
+  )
+
+  upload_to_testflight(
+    api_key: api_key,
+    app_identifier: app_identifier,
+    distribute_external: false,          # tests INTERNES uniquement
+    groups: INTERNAL_GROUPS,             # rend le build dispo au groupe interne
+    skip_submission: true,               # pas de soumission App Store
+    skip_waiting_for_build_processing: false # attend le traitement pour distribuer
+  )
+end
+
+platform :ios do
+  desc "iPhone/iPad → TestFlight (tests internes)"
+  lane :beta_ios do
+    build_and_ship(scheme: IOS_SCHEME, app_identifier: IOS_APP_ID, api_key: asc_api_key)
+  end
+
+  desc "Envoie un .ipa déjà construit (IPA_PATH) → TestFlight (tests internes)"
+  lane :upload_ios do
+    upload_to_testflight(
+      api_key: asc_api_key,
+      ipa: File.expand_path(ENV.fetch("IPA_PATH")),
+      app_identifier: IOS_APP_ID,
+      distribute_external: false,
+      groups: INTERNAL_GROUPS,
+      skip_submission: true,
+      skip_waiting_for_build_processing: false
+    )
+  end
+
+  desc "Apple TV → TestFlight (tests internes)"
+  lane :beta_tvos do
+    build_and_ship(scheme: TVOS_SCHEME, app_identifier: TVOS_APP_ID, api_key: asc_api_key)
+  end
+
+  desc "iPhone/iPad + Apple TV → TestFlight"
+  lane :beta do
+    key = asc_api_key
+    build_and_ship(scheme: IOS_SCHEME,  app_identifier: IOS_APP_ID,  api_key: key)
+    build_and_ship(scheme: TVOS_SCHEME, app_identifier: TVOS_APP_ID, api_key: key)
+  end
+
+  # Créer une FICHE d'app n'est pas possible via clé App Store Connect API
+  # (limitation Apple). Voir DEPLOYMENT.md : soit l'UI web (recommandé), soit ce
+  # lane avec un Apple ID (auth 2FA interactive). Les Bundle IDs, eux, se créent
+  # via la clé API — voir scripts/register_bundle_ids.rb.
+  desc "Crée (une fois) les deux fiches d'app — nécessite un Apple ID (2FA)"
+  lane :register_apps do
+    user = ENV["APPLE_ID"]
+    UI.user_error!("APPLE_ID requis (e-mail Apple ID) — la création de fiche d'app n'accepte pas la clé API.") if user.to_s == ""
+    ios_name  = ENV["IOS_APP_NAME"]  || "StremioTV"
+    tvos_name = ENV["TVOS_APP_NAME"] || "StremioTV Apple TV"
+    opts = { username: user, team_id: ENV["APPLE_TEAM_ID"], language: "en-US" }
+    opts[:company_name] = ENV["COMPANY_NAME"] if ENV["COMPANY_NAME"].to_s != ""
+
+    produce(app_identifier: IOS_APP_ID,  app_name: ios_name,  platforms: ["ios"],  **opts)
+    produce(app_identifier: TVOS_APP_ID, app_name: tvos_name, platforms: ["tvos"], **opts)
+  end
+end
