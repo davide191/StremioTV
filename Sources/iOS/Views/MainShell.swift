@@ -6,6 +6,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     case home = "Accueil"
     case search = "Recherche"
     case library = "Bibliothèque"
+    case downloads = "Téléchargements"
     case settings = "Réglages"
 
     var id: String { rawValue }
@@ -15,6 +16,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .home: "house.fill"
         case .search: "magnifyingglass"
         case .library: "rectangle.stack.fill"
+        case .downloads: "arrow.down.circle.fill"
         case .settings: "gearshape.fill"
         }
     }
@@ -24,6 +26,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .home: HomeScreen()
         case .search: SearchScreen()
         case .library: LibraryScreen()
+        case .downloads: DownloadsScreen()
         case .settings: SettingsScreen()
         }
     }

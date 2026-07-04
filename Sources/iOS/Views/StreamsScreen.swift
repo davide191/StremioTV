@@ -14,6 +14,7 @@ struct StreamsScreen: View {
 
     @Environment(AddonRepository.self) private var repo
     @Environment(LibraryStore.self) private var library
+    @Environment(DownloadStore.self) private var downloads
     @State private var model = DetailViewModel()
     @State private var playback: PlaybackRequest?
 
@@ -64,34 +65,111 @@ struct StreamsScreen: View {
     }
 
     private func streamRow(_ stream: StreamItem) -> some View {
-        Button {
-            if let url = stream.playableURL {
-                playback = PlaybackRequest(
-                    url: url, metaId: metaId, type: type, name: name, poster: poster,
-                    videoId: videoId, resumeOffsetMs: resumeOffsetMs, subtitles: model.subtitles,
-                    episodeIds: episodeIds, providerBase: stream.sourceBase
-                )
-            }
-        } label: {
-            VStack(alignment: .leading, spacing: 5) {
-                Text(stream.headline).font(.headline)
-                if let subtitle = stream.subtitle {
-                    Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(3)
-                }
-                if !stream.isDirectlyPlayable {
-                    Label(
-                        stream.isTorrent ? "Torrent — nécessite debrid/streaming-server" : "Format non lisible nativement",
-                        systemImage: "exclamationmark.triangle.fill"
+        HStack(spacing: 12) {
+            Button {
+                if let url = stream.playableURL {
+                    playback = PlaybackRequest(
+                        url: url, metaId: metaId, type: type, name: name, poster: poster,
+                        videoId: videoId, resumeOffsetMs: resumeOffsetMs, subtitles: model.subtitles,
+                        episodeIds: episodeIds, providerBase: stream.sourceBase
                     )
-                    .font(.caption2)
-                    .foregroundStyle(.orange)
                 }
+            } label: {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(stream.headline).font(.headline)
+                    if let subtitle = stream.subtitle {
+                        Text(subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                    }
+                    if !stream.isDirectlyPlayable {
+                        Label(
+                            stream.isTorrent ? "Torrent — nécessite debrid/streaming-server" : "Format non lisible nativement",
+                            systemImage: "exclamationmark.triangle.fill"
+                        )
+                        .font(.caption2)
+                        .foregroundStyle(.orange)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .disabled(!stream.isDirectlyPlayable)
+
+            downloadControl(for: stream)
         }
-        .buttonStyle(.plain)
-        .disabled(!stream.isDirectlyPlayable)
+    }
+
+    // MARK: - Téléchargement hors-ligne
+
+    /// Affordance de téléchargement pour une source directe (masquée pour les
+    /// torrents / HLS / formats non lisibles).
+    @ViewBuilder private func downloadControl(for stream: StreamItem) -> some View {
+        if let url = stream.playableURL, StreamDownloadRules.isLikelyDownloadable(url) {
+            if let item = downloads.item(metaId: metaId, videoId: videoId) {
+                existingDownloadControl(item)
+            } else {
+                Button { startDownload(stream, url: url) } label: {
+                    Image(systemName: "arrow.down.circle").font(.title3)
+                }
+                .buttonStyle(.plain)
+                .tint(.brand)
+                .accessibilityLabel("Télécharger pour le hors-ligne")
+            }
+        }
+    }
+
+    @ViewBuilder private func existingDownloadControl(_ item: DownloadItem) -> some View {
+        switch item.status {
+        case .completed:
+            Image(systemName: "checkmark.circle.fill")
+                .font(.title3).foregroundStyle(Color.brand)
+                .accessibilityLabel("Téléchargé")
+        case .downloading, .queued:
+            Button { downloads.pause(id: item.id) } label: { progressRing(item.progress) }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Mettre en pause")
+        case .paused:
+            Button { downloads.resume(id: item.id) } label: {
+                Image(systemName: "arrow.down.circle").font(.title3)
+            }
+            .buttonStyle(.plain).tint(.brand)
+            .accessibilityLabel("Reprendre")
+        case .failed:
+            Button { downloads.retry(id: item.id) } label: {
+                Image(systemName: "arrow.clockwise.circle").font(.title3)
+            }
+            .buttonStyle(.plain).tint(.orange)
+            .accessibilityLabel("Réessayer")
+        }
+    }
+
+    private func progressRing(_ progress: Double) -> some View {
+        ZStack {
+            Circle().stroke(.gray.opacity(0.3), lineWidth: 2)
+            Circle().trim(from: 0, to: max(0.02, progress))
+                .stroke(Color.brand, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Image(systemName: "stop.fill").font(.system(size: 7)).foregroundStyle(.secondary)
+        }
+        .frame(width: 24, height: 24)
+    }
+
+    private func startDownload(_ stream: StreamItem, url: URL) {
+        Task {
+            await downloads.enqueue(
+                sourceURL: url, metaId: metaId, type: type, videoId: videoId,
+                name: name, videoTitle: title, poster: poster,
+                streamTitle: stream.headline, subtitle: preferredSubtitle()
+            )
+        }
+    }
+
+    /// Sous-titre externe à télécharger avec la vidéo : uniquement la langue
+    /// préférée persistée (v1), s'il y a une correspondance.
+    private func preferredSubtitle() -> SubtitleItem? {
+        let prefs = PlaybackPreferences()
+        guard let lang = prefs.subtitleLanguage, lang != "OFF" else { return nil }
+        return model.subtitles.first { $0.displayLanguage == lang }
     }
 
     /// Résout l'épisode suivant en réutilisant **le même provider** (repli sur

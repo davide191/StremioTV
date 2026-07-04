@@ -4,6 +4,7 @@ import SwiftUI
 /// Au lancement, tente de restaurer une session via l'authKey du Keychain.
 struct RootView: View {
     @Environment(SessionStore.self) private var session
+    @Environment(NetworkMonitor.self) private var network
 
     var body: some View {
         Group {
@@ -18,6 +19,15 @@ struct RootView: View {
         }
         .task {
             if ProcessInfo.processInfo.arguments.contains("-uitestGuest") {
+                session.continueAsGuest()
+                return
+            }
+            // Attend le premier état réseau connu (évite une course au lancement).
+            await network.firstUpdate()
+            if network.isOffline {
+                // Hors-ligne : on entre directement dans l'app en mode invité pour
+                // que l'onglet Téléchargements soit accessible sans réseau ni compte.
+                // La clé d'auth reste en Keychain — une relance en ligne restaure.
                 session.continueAsGuest()
             } else {
                 await session.restore()
