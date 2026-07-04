@@ -61,7 +61,7 @@ jobs:
       # iOS uniquement pour l'instant : la fiche d'app tvOS n'existe pas encore.
       # Repasser sur `fastlane beta` (iOS + tvOS) une fois la fiche tvOS créée.
       - name: Deploy to TestFlight (iOS)
-        run: bundle exec fastlane beta_ios
+        run: bundle exec fastlane ios beta_ios
         env:
           ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
