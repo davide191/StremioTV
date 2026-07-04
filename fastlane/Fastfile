@@ -84,6 +84,10 @@ def build_and_ship(scheme:, app_identifier:, api_key:)
     export_method: "app-store",
     output_directory: "build",
     output_name: "#{scheme}.ipa",
+    # Sortie xcodebuild brute (chaîne vide) : évite xcpretty, cassé sous Ruby 4.x
+    # (« uninitialized constant Gem::Resolver::APISet::GemParser »), dont le crash
+    # au démarrage tuait l'archive via `set -o pipefail`.
+    xcodebuild_formatter: "",
     # gym applique aussi `xcargs` à l'étape d'export : on n'y met l'auth qu'UNE
     # fois ici (dupliquer via export_xcargs => "may only be provided once").
     xcargs: "#{auth} DEVELOPMENT_TEAM=#{TEAM_ID} " \
