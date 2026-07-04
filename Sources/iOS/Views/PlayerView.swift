@@ -282,4 +282,11 @@ final class IOSPlayerViewController: VLCPlayerCoreController, UIGestureRecognize
         // Ne pas déclencher le tap « toggle » quand on touche un bouton ou le slider.
         !(touch.view is UIControl)
     }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                           shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+        // Notre tap doit survivre à l'arbitrage face aux recognizers tiers
+        // (SwiftUI, libVLC…) éventuellement posés sur la même hiérarchie.
+        true
+    }
 }
