@@ -3,7 +3,7 @@
 
 Répond à toute requête `/stream/...` par la même liste : un torrent, un flux
 HTTP direct (lisible), puis un autre torrent. Le simulateur partage le réseau
-de la machine hôte : l'app l'atteint via http://localhost:<port>.
+de la machine hôte : l'app l'atteint via http://127.0.0.1:<port>.
 
 Usage : python3 .github/ci/mock_addon.py 8765
 """
@@ -52,4 +52,4 @@ class Handler(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
-    ThreadingHTTPServer(("", port), Handler).serve_forever()
+    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
