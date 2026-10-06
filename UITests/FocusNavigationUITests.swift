@@ -96,13 +96,17 @@ final class FocusNavigationUITests: XCTestCase {
         waitForFocus("H flux : 1er flux lisible", timeout: 60, labelContains: "MockDirect")
         assertTabBarNotFocused()
 
-        // Liste mixte : les torrents sont désactivés, ▲/▼ restent sur le flux lisible.
+        // Liste mixte : les torrents sont désactivés. ▲ depuis la 1re ligne
+        // focusable mène (volontairement) à la barre d'onglets ; ▼ doit revenir
+        // sur le flux lisible, et le torrent du dessous est ignoré.
         remote.press(.up)
         sleep(1)
-        waitForFocus("H ▲ : reste sur le flux lisible", labelContains: "MockDirect")
+        logFocus("H ▲ depuis le 1er flux focusable")
+        remote.press(.down)
+        waitForFocus("H ▼ : retour sur le flux lisible", labelContains: "MockDirect")
         remote.press(.down)
         sleep(1)
-        waitForFocus("H ▼ : reste sur le flux lisible", labelContains: "MockDirect")
+        waitForFocus("H ▼ : torrent du dessous ignoré", labelContains: "MockDirect")
 
         // J : lecteur puis Menu → la liste n'est pas rechargée, le flux reste focalisé.
         remote.press(.select)
