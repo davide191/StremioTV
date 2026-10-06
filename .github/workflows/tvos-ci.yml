@@ -1,0 +1,145 @@
+name: tvOS build & focus tests
+
+# Compile l'app tvOS, lance les tests unitaires + UI (focus télécommande) sur le
+# simulateur Apple TV, et produit une IPA non signée (à re-signer, ex. Sideloadly).
+# Le job `baseline` rejoue un diagnostic sur le code d'origine pour comparaison.
+on:
+  push:
+    branches: ["fix/tvos-focus"]
+  workflow_dispatch:
+
+concurrency:
+  group: tvos-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BASELINE_REF: ee734c2   # upstream main avant le correctif de focus
+
+jobs:
+  tvos:
+    name: tvOS (${{ matrix.variant }})
+    runs-on: macos-26
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [fixed, baseline]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Keep CI helpers
+        run: cp -R .github/ci "$RUNNER_TEMP/ci"
+
+      - name: Use original code (baseline)
+        if: matrix.variant == 'baseline'
+        run: |
+          git checkout --detach "$BASELINE_REF"
+          cp "$RUNNER_TEMP/ci/BaselineFocusUITests.swift" UITests/
+
+      - name: Select Xcode 26.6
+        run: |
+          sudo xcode-select -s /Applications/Xcode_26.6.app
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Cache VLCKit frameworks
+        uses: actions/cache@v4
+        with:
+          path: Vendor
+          key: vlckit-3.7.3-319ed2c0-79128878
+
+      - name: Fetch VLCKit
+        run: bash scripts/fetch_vlckit.sh
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Pick Apple TV simulator
+        run: echo "SIM_UDID=$(python3 "$RUNNER_TEMP/ci/pick_simulator.py")" >> "$GITHUB_ENV"
+
+      - name: Start mock stream add-on
+        if: matrix.variant == 'fixed'
+        run: |
+          nohup python3 "$RUNNER_TEMP/ci/mock_addon.py" 8765 > "$RUNNER_TEMP/mock_addon.log" 2>&1 &
+          sleep 2
+          curl -sf http://localhost:8765/manifest.json
+
+      - name: Unit + UI tests (tvOS simulator)
+        if: matrix.variant == 'fixed'
+        env:
+          TEST_RUNNER_MOCK_ADDON_URL: http://localhost:8765
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild test -project StremioTV.xcodeproj -scheme StremioTV \
+            -destination "id=$SIM_UDID" -resultBundlePath build/tests.xcresult \
+            2>&1 | tee build/test.log \
+            | { grep -E "Test Case|Test Suite .*(passed|failed)|error:|FOCUS-LOG|Executed|\*\* TEST" || true; }
+
+      - name: Baseline diagnostic (original code)
+        if: matrix.variant == 'baseline'
+        run: |
+          set -o pipefail
+          mkdir -p build
+          xcodebuild test -project StremioTV.xcodeproj -scheme StremioTV \
+            -destination "id=$SIM_UDID" -resultBundlePath build/tests.xcresult \
+            -only-testing:StremioTVUITests/BaselineFocusUITests \
+            2>&1 | tee build/test.log \
+            | { grep -E "Test Case|error:|FOCUS-LOG|\*\* TEST" || true; }
+
+      - name: Export screenshots
+        if: always()
+        run: |
+          xcrun xcresulttool export attachments --path build/tests.xcresult \
+            --output-path build/screenshots || true
+          ls build/screenshots | wc -l || true
+
+      - name: Build unsigned tvOS IPA (Release, device)
+        if: ${{ !cancelled() && matrix.variant == 'fixed' }}
+        run: |
+          set -o pipefail
+          xcodebuild -project StremioTV.xcodeproj -scheme StremioTV -configuration Release \
+            -destination 'generic/platform=tvOS' -derivedDataPath build/dd \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" build \
+            2>&1 | tee build/ipa-build.log | { grep -E "error:|\*\* BUILD" || true; }
+          APP=build/dd/Build/Products/Release-appletvos/StremioTV.app
+          plutil -p "$APP/Info.plist" | grep -E "CFBundleIdentifier|CFBundleShortVersionString|MinimumOSVersion|UIDeviceFamily" -A2
+          lipo -info "$APP/StremioTV"
+          ls "$APP/Frameworks"
+          mkdir -p build/ipa/Payload
+          cp -R "$APP" build/ipa/Payload/
+          (cd build/ipa && zip -qry ../StremioTV-tvOS-unsigned.ipa Payload)
+          ls -lh build/StremioTV-tvOS-unsigned.ipa
+          shasum -a 256 build/StremioTV-tvOS-unsigned.ipa
+
+      - name: Build iOS target (regression check)
+        if: ${{ !cancelled() && matrix.variant == 'fixed' }}
+        run: |
+          set -o pipefail
+          xcodebuild -project StremioTV.xcodeproj -scheme StremioTV-iOS \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build/dd-ios \
+            CODE_SIGNING_ALLOWED=NO build \
+            2>&1 | tee build/ios-build.log | { grep -E "error:|\*\* BUILD" || true; }
+
+      - name: Upload IPA
+        if: ${{ !cancelled() && matrix.variant == 'fixed' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: StremioTV-tvOS-unsigned-ipa
+          path: build/StremioTV-tvOS-unsigned.ipa
+          if-no-files-found: ignore
+
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidence-${{ matrix.variant }}
+          path: |
+            build/screenshots
+            build/*.log
+          if-no-files-found: ignore
