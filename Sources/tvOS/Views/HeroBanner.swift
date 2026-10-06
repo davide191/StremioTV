@@ -24,6 +24,7 @@ struct HeroBanner: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16))
         }
         .buttonStyle(.card)
+        .accessibilityIdentifier("heroBanner")
         .task {
             detail = try? await AddonClient().meta(
                 base: bases.first ?? "", type: preview.type ?? "movie", id: preview.id

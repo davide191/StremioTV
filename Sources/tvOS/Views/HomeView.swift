@@ -5,6 +5,8 @@ struct HomeView: View {
     @Environment(AddonRepository.self) private var repo
     @Environment(LibraryStore.self) private var library
     @State private var model = HomeViewModel()
+    /// Add-ons dont les catalogues sont déjà affichés.
+    @State private var loadedAddonIDs: [String]?
 
     var body: some View {
         NavigationStack {
@@ -20,10 +22,20 @@ struct HomeView: View {
                 }
                 .padding(.bottom, 40)
             }
-            .task(id: repo.addons.map(\.id)) {
-                await model.load(addons: repo.addons)
-            }
         }
+        // Sur la pile et non sur sa racine : ouvrir une fiche n'annule pas le
+        // chargement, et le retour ne vide pas les rangées (`load` repart de
+        // zéro) — le poster d'origine reste là pour recevoir le focus restauré.
+        .task(id: repo.addons.map(\.id)) {
+            guard loadedAddonIDs != repo.addons.map(\.id) else { return }
+            await loadCatalogs()
+        }
+    }
+
+    private func loadCatalogs() async {
+        let ids = repo.addons.map(\.id)
+        await model.load(addons: repo.addons)
+        if !Task.isCancelled, !model.sections.isEmpty { loadedAddonIDs = ids }
     }
 
     @ViewBuilder private var content: some View {
@@ -36,6 +48,8 @@ struct HomeView: View {
                 Image(systemName: "wifi.exclamationmark").font(.system(size: 60))
                 Text("Impossible de charger les catalogues").font(.title3)
                 Text(error).font(.callout).foregroundStyle(.secondary)
+                Button("Réessayer") { Task { await loadCatalogs() } }
+                    .padding(.top, 12)
             }
             .frame(maxWidth: .infinity)
             .padding(.top, 120)

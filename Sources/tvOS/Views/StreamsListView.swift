@@ -2,6 +2,10 @@ import SwiftUI
 
 /// Liste des flux d'un item. Lance la lecture (reprise + sous-titres) et
 /// enregistre la progression sur le compte à l'arrêt.
+///
+/// Focus : chaque phase garde un contrôle focusable dans la page (voir
+/// `LoadPhase`) — « Annuler » pendant la recherche, « Réessayer » sans flux,
+/// sinon les flux, y compris non lisibles.
 struct StreamsListView: View {
     let metaId: String
     let type: String
@@ -16,31 +20,35 @@ struct StreamsListView: View {
     @Environment(LibraryStore.self) private var library
     @State private var model = DetailViewModel()
     @State private var playback: PlaybackRequest?
+    @State private var hasLoaded = false
+    @FocusState private var focus: StreamsFocusTarget?
+
+    private var phase: LoadPhase {
+        LoadPhase(hasContent: !model.streams.isEmpty,
+                  isFinished: hasLoaded && !model.isLoadingStreams)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ScreenHeader(title: title)
-            List {
-                if model.isLoadingStreams {
-                    HStack { ProgressView(); Text("Recherche de flux…") }
-                }
-                if let note = model.note {
-                    Text(note).font(.callout).foregroundStyle(.secondary)
-                }
-                if !model.subtitles.isEmpty {
-                    Label("\(model.subtitles.count) sous-titres disponibles",
-                          systemImage: "captions.bubble")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                ForEach(model.streams) { stream in
-                    streamRow(stream)
-                }
+            switch phase {
+            case .loading: LoadingPlaceholder(message: "Recherche de flux…")
+            case .empty: emptyState
+            case .populated: streamList
             }
         }
         .task {
-            let bases = repo.addons.map(\.base)
-            await model.loadStreams(type: type, id: videoId, bases: bases)
-            await model.loadSubtitles(type: type, id: videoId, addons: repo.addons)
+            // Une seule recherche par écran : au retour du lecteur, la liste
+            // (et le flux que le système re-focalise) doit rester en place.
+            guard !hasLoaded else { return }
+            await load()
+        }
+        .onChange(of: phase) { _, newPhase in
+            // Le bouton focalisé (« Annuler ») vient de disparaître : on
+            // désigne explicitement son successeur dans la page.
+            if let target = StreamsFocusTarget.after(newPhase, streams: model.streams) {
+                focus = target
+            }
         }
         .fullScreenCover(item: $playback) { request in
             PlayerView(
@@ -59,6 +67,43 @@ struct StreamsListView: View {
                 onClose: { playback = nil }
             )
             .ignoresSafeArea()
+        }
+    }
+
+    private func load() async {
+        await model.loadStreams(type: type, id: videoId, bases: repo.addons.map(\.base))
+        // Une recherche annulée (écran quitté) n'est pas un résultat vide.
+        guard !Task.isCancelled else { return }
+        hasLoaded = true
+        await model.loadSubtitles(type: type, id: videoId, addons: repo.addons)
+    }
+
+    private var streamList: some View {
+        List {
+            if let note = model.note {
+                Text(note).font(.callout).foregroundStyle(.secondary)
+            }
+            if !model.subtitles.isEmpty {
+                Label("\(model.subtitles.count) sous-titres disponibles",
+                      systemImage: "captions.bubble")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            ForEach(model.streams) { stream in
+                streamRow(stream)
+                    .focused($focus, equals: .stream(stream.id))
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        ContentUnavailableView {
+            Label("Aucun flux disponible", systemImage: "play.slash")
+        } description: {
+            Text(model.note ?? "")
+        } actions: {
+            Button("Réessayer") { Task { await load() } }
+                .focused($focus, equals: .retry)
+                .accessibilityIdentifier("streamsRetry")
         }
     }
 
@@ -115,7 +160,30 @@ struct StreamsListView: View {
                 }
             }
             .padding(.vertical, 4)
+            .opacity(stream.isDirectlyPlayable ? 1 : 0.6)
         }
-        .disabled(!stream.isDirectlyPlayable)
+        // Pas de `.disabled` : sur tvOS un bouton désactivé n'est pas
+        // focusable, et une liste 100 % torrents ne laisserait aucun élément
+        // focusable (ni défilable). L'action ignore déjà les flux non lisibles.
+    }
+}
+
+/// Cible de focus de la liste des flux.
+enum StreamsFocusTarget: Hashable {
+    case retry
+    case stream(String)
+
+    /// Successeur d'« Annuler » à l'issue d'une recherche : le 1er flux lisible,
+    /// sinon le 1er flux, sinon « Réessayer ». `nil` pendant le chargement
+    /// (« Annuler » est alors le seul contrôle de la page).
+    static func after(_ phase: LoadPhase, streams: [StreamItem]) -> StreamsFocusTarget? {
+        switch phase {
+        case .loading:
+            return nil
+        case .empty:
+            return .retry
+        case .populated:
+            return (streams.first(where: \.isDirectlyPlayable) ?? streams.first).map { .stream($0.id) }
+        }
     }
 }

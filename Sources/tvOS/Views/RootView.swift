@@ -25,6 +25,7 @@ struct RootView: View {
             }
         }
         .task {
+            Self.applyTestAddon(to: session.repository)
             if let key = Self.testAuthKey {
                 await session.bootstrap(authKey: key)
             } else if ProcessInfo.processInfo.arguments.contains("-uitestGuest") {
@@ -99,6 +100,20 @@ struct RootView: View {
             return nil
         }
         return args[index + 1]
+    }
+
+    /// `-uitestAddon <url>` (avec `-uitestGuest` / `-uitestScreen`) : ajoute un
+    /// add-on manuel, ex. un faux add-on de flux local en CI. Sans l'argument,
+    /// retire les ajouts d'un test précédent (Cinemeta seul = zéro flux).
+    private static func applyTestAddon(to repository: AddonRepository) {
+        let args = ProcessInfo.processInfo.arguments
+        guard args.contains("-uitestGuest") || args.contains("-uitestScreen") else { return }
+        for addon in repository.addons where addon.source == .manual {
+            repository.remove(addon)
+        }
+        if let index = args.firstIndex(of: "-uitestAddon"), index + 1 < args.count {
+            repository.addManual(args[index + 1])
+        }
     }
 
     @MainActor private static var mockTracks: TrackController {

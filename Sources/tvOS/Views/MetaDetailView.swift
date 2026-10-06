@@ -9,6 +9,7 @@ struct MetaDetailView: View {
     @Environment(LibraryStore.self) private var library
     @State private var model = DetailViewModel()
     @State private var selectedSeason: Int?
+    @State private var metaLoaded = false
 
     private var type: String { preview.type ?? "movie" }
     private var detail: MetaDetail { model.meta ?? MetaDetail(from: preview) }
@@ -32,7 +33,14 @@ struct MetaDetailView: View {
             }
             .ignoresSafeArea()
         }
-        .task { await model.loadMeta(preview: preview, bases: repo.addons.map(\.base)) }
+        .task {
+            // Une seule fois par fiche : un rechargement au retour (flux,
+            // lecteur) remplacerait la liste d'épisodes par un indicateur et
+            // détruirait l'épisode que le système doit re-focaliser.
+            guard !metaLoaded else { return }
+            await model.loadMeta(preview: preview, bases: repo.addons.map(\.base))
+            metaLoaded = !Task.isCancelled
+        }
     }
 
     // MARK: - En-tête (poster + infos)
@@ -91,6 +99,7 @@ struct MetaDetailView: View {
                         Label("Reprendre \(resume.displayTitle)", systemImage: "play.fill").font(.title3)
                     }
                     .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("detailPrimaryAction")
                 }
             } else {
                 NavigationLink {
@@ -100,6 +109,7 @@ struct MetaDetailView: View {
                           systemImage: "play.fill").font(.title3)
                 }
                 .buttonStyle(.borderedProminent)
+                .accessibilityIdentifier("detailPrimaryAction")
             }
             libraryButton
         }
@@ -123,6 +133,7 @@ struct MetaDetailView: View {
         // le distingue du bouton de lecture principal (accent).
         .buttonStyle(.borderedProminent)
         .tint(Color(white: 0.3))
+        .accessibilityIdentifier("detailLibraryButton")
     }
 
     // MARK: - Épisodes
@@ -142,6 +153,7 @@ struct MetaDetailView: View {
                         episodeRow(video)
                     }
                     .buttonStyle(.card)
+                    .accessibilityIdentifier("episode-\(video.id)")
                 }
             }
         } else {

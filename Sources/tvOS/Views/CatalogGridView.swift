@@ -11,34 +11,64 @@ struct CatalogGridView: View {
 
     private let columns = [GridItem(.adaptive(minimum: 240), spacing: 40)]
 
+    /// Focus : « Annuler » pendant la 1re page, « Réessayer » si le catalogue
+    /// est vide ou en erreur — jamais une page sans élément focusable.
+    private var phase: LoadPhase {
+        LoadPhase(hasContent: !model.metas.isEmpty, isFinished: model.reachedEnd)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ScreenHeader(title: title)
-            ScrollView {
-                LazyVGrid(columns: columns, spacing: 40) {
-                    ForEach(model.metas) { meta in
-                        NavigationLink {
-                            MetaDetailView(preview: meta)
-                        } label: {
-                            PosterCard(meta: meta)
-                        }
-                        .buttonStyle(.card)
-                        .onAppear {
-                            if meta.id == model.metas.last?.id {
-                                Task { await model.loadMore(base: base, type: type, catalogId: catalogId) }
-                            }
-                        }
-                    }
-                }
-                .padding(60)
-
-                if model.isLoading {
-                    ProgressView().padding(40)
-                }
+            switch phase {
+            case .loading: LoadingPlaceholder(message: "Chargement du catalogue…")
+            case .empty: emptyState
+            case .populated: grid
             }
         }
         .task {
             await model.loadFirstPage(base: base, type: type, catalogId: catalogId)
+        }
+    }
+
+    private var grid: some View {
+        ScrollView {
+            LazyVGrid(columns: columns, spacing: 40) {
+                ForEach(model.metas) { meta in
+                    NavigationLink {
+                        MetaDetailView(preview: meta)
+                    } label: {
+                        PosterCard(meta: meta)
+                    }
+                    .buttonStyle(.card)
+                    .accessibilityIdentifier("poster-\(meta.id)")
+                    .onAppear {
+                        if meta.id == model.metas.last?.id {
+                            Task { await model.loadMore(base: base, type: type, catalogId: catalogId) }
+                        }
+                    }
+                }
+            }
+            .padding(60)
+
+            if model.isLoading {
+                ProgressView().padding(40)
+            }
+        }
+    }
+
+    private var emptyState: some View {
+        ContentUnavailableView {
+            Label("Catalogue indisponible", systemImage: "rectangle.stack.badge.minus")
+        } description: {
+            Text("Aucun élément n'a pu être chargé.")
+        } actions: {
+            Button("Réessayer") {
+                // Le modèle marque la fin du catalogue après une erreur : on repart d'un neuf.
+                let fresh = CatalogGridViewModel()
+                model = fresh
+                Task { await fresh.loadFirstPage(base: base, type: type, catalogId: catalogId) }
+            }
         }
     }
 }
