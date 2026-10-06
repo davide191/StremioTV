@@ -2,8 +2,9 @@
 """Faux add-on Stremio de flux pour les tests UI tvOS (CI).
 
 Répond à toute requête `/stream/...` par la même liste : un torrent, un flux
-HTTP direct (lisible), puis un autre torrent. Le simulateur partage le réseau
-de la machine hôte : l'app l'atteint via http://127.0.0.1:<port>.
+HTTP direct (lisible), puis un autre torrent. Sous la base `/torrents`, renvoie
+12 torrents seulement (cas « Torrentio sans debrid »). Le simulateur partage le
+réseau de la machine hôte : l'app l'atteint via http://127.0.0.1:<port>.
 
 Usage : python3 .github/ci/mock_addon.py 8765
 """
@@ -33,12 +34,23 @@ STREAMS = {
 }
 
 
+TORRENTS_ONLY = {
+    "streams": [
+        {"name": f"MockTorrent{index:02d}", "title": "torrent", "infoHash": f"{index:040x}"}
+        for index in range(1, 13)
+    ]
+}
+
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        if self.path == "/manifest.json":
+        path, streams = self.path, STREAMS
+        if path.startswith("/torrents/"):
+            path, streams = path[len("/torrents"):], TORRENTS_ONLY
+        if path == "/manifest.json":
             body = MANIFEST
-        elif self.path.startswith("/stream/"):
-            body = STREAMS
+        elif path.startswith("/stream/"):
+            body = streams
         else:
             self.send_error(404)
             return

@@ -77,8 +77,10 @@ jobs:
           TEST_RUNNER_MOCK_ADDON_URL: http://127.0.0.1:8765
         run: |
           set -o pipefail
+          # 3 passes complètes : un focus « gagné à la course » ne passe pas inaperçu.
           xcodebuild test -project StremioTV.xcodeproj -scheme StremioTV \
             -destination "id=$SIM_UDID" -resultBundlePath build/tests.xcresult \
+            -test-iterations 3 \
             2>&1 | tee build/test.log \
             | { grep -E "Test Case|Test Suite .*(passed|failed)|error:|FOCUS-LOG|Executed|\*\* TEST" || true; }
 

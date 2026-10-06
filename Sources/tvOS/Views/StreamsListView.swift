@@ -5,7 +5,7 @@ import SwiftUI
 ///
 /// Focus : chaque phase garde un contrôle focusable dans la page (voir
 /// `LoadPhase`) — « Annuler » pendant la recherche, « Réessayer » sans flux,
-/// sinon les flux, y compris non lisibles.
+/// sinon les flux (voir `isFocusable`).
 struct StreamsListView: View {
     let metaId: String
     let type: String
@@ -21,7 +21,6 @@ struct StreamsListView: View {
     @State private var model = DetailViewModel()
     @State private var playback: PlaybackRequest?
     @State private var hasLoaded = false
-    @FocusState private var focus: StreamsFocusTarget?
 
     private var phase: LoadPhase {
         LoadPhase(hasContent: !model.streams.isEmpty,
@@ -42,13 +41,6 @@ struct StreamsListView: View {
             // (et le flux que le système re-focalise) doit rester en place.
             guard !hasLoaded else { return }
             await load()
-        }
-        .onChange(of: phase) { _, newPhase in
-            // Le bouton focalisé (« Annuler ») vient de disparaître : on
-            // désigne explicitement son successeur dans la page.
-            if let target = StreamsFocusTarget.after(newPhase, streams: model.streams) {
-                focus = target
-            }
         }
         .fullScreenCover(item: $playback) { request in
             PlayerView(
@@ -90,7 +82,7 @@ struct StreamsListView: View {
             }
             ForEach(model.streams) { stream in
                 streamRow(stream)
-                    .focused($focus, equals: .stream(stream.id))
+                    .disabled(!Self.isFocusable(stream, among: model.streams))
             }
         }
     }
@@ -102,7 +94,6 @@ struct StreamsListView: View {
             Text(model.note ?? "")
         } actions: {
             Button("Réessayer") { Task { await load() } }
-                .focused($focus, equals: .retry)
                 .accessibilityIdentifier("streamsRetry")
         }
     }
@@ -162,28 +153,15 @@ struct StreamsListView: View {
             .padding(.vertical, 4)
             .opacity(stream.isDirectlyPlayable ? 1 : 0.6)
         }
-        // Pas de `.disabled` : sur tvOS un bouton désactivé n'est pas
-        // focusable, et une liste 100 % torrents ne laisserait aucun élément
-        // focusable (ni défilable). L'action ignore déjà les flux non lisibles.
     }
-}
 
-/// Cible de focus de la liste des flux.
-enum StreamsFocusTarget: Hashable {
-    case retry
-    case stream(String)
-
-    /// Successeur d'« Annuler » à l'issue d'une recherche : le 1er flux lisible,
-    /// sinon le 1er flux, sinon « Réessayer ». `nil` pendant le chargement
-    /// (« Annuler » est alors le seul contrôle de la page).
-    static func after(_ phase: LoadPhase, streams: [StreamItem]) -> StreamsFocusTarget? {
-        switch phase {
-        case .loading:
-            return nil
-        case .empty:
-            return .retry
-        case .populated:
-            return (streams.first(where: \.isDirectlyPlayable) ?? streams.first).map { .stream($0.id) }
-        }
+    /// Un flux non lisible n'est désactivé que si la liste contient un flux
+    /// lisible : le 1er élément focusable — celui que tvOS focalise de lui-même
+    /// quand « Annuler » disparaît — est alors toujours le 1er flux lisible.
+    /// Sans flux lisible (ex. torrents seuls), tout reste focusable : un bouton
+    /// désactivé ne l'est pas sur tvOS, et la page n'aurait plus aucun élément
+    /// focusable (ni défilable). L'action ignore déjà les flux non lisibles.
+    static func isFocusable(_ stream: StreamItem, among streams: [StreamItem]) -> Bool {
+        stream.isDirectlyPlayable || !streams.contains(where: \.isDirectlyPlayable)
     }
 }

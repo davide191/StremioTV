@@ -96,13 +96,13 @@ final class FocusNavigationUITests: XCTestCase {
         waitForFocus("H flux : 1er flux lisible", timeout: 60, labelContains: "MockDirect")
         assertTabBarNotFocused()
 
-        // G2 : les flux non lisibles restent focusables (liste défilable).
+        // Liste mixte : les torrents sont désactivés, ▲/▼ restent sur le flux lisible.
         remote.press(.up)
-        waitForFocus("G2 ▲ : torrent au-dessus focusable", labelContains: "MockTorrentTop")
-        remote.press(.down); remote.press(.down)
-        waitForFocus("G2 ▼▼ : torrent en dessous focusable", labelContains: "MockTorrentBottom")
-        remote.press(.up)
-        waitForFocus("H retour sur le flux lisible", labelContains: "MockDirect")
+        sleep(1)
+        waitForFocus("H ▲ : reste sur le flux lisible", labelContains: "MockDirect")
+        remote.press(.down)
+        sleep(1)
+        waitForFocus("H ▼ : reste sur le flux lisible", labelContains: "MockDirect")
 
         // J : lecteur puis Menu → la liste n'est pas rechargée, le flux reste focalisé.
         remote.press(.select)
@@ -120,6 +120,34 @@ final class FocusNavigationUITests: XCTestCase {
         waitForFocus("J retour fiche : action principale", on: primary)
         remote.press(.menu)
         waitForFocus("J retour accueil : bannière", on: hero)
+    }
+
+    // MARK: - Torrents seuls (ex. Torrentio sans debrid) : focusables et défilables
+
+    func testTorrentOnlyStreamsStayFocusableAndScrollable() throws {
+        guard let mock = mockAddonURL else { throw XCTSkip("MOCK_ADDON_URL absent") }
+        app.launchArguments = ["-uitestGuest", "-uitestAddon", mock + "/torrents"]
+        app.launch()
+        let hero = app.buttons["heroBanner"]
+        let primary = app.buttons["detailPrimaryAction"]
+
+        enterHomeContent(hero)
+        waitForFocus("G2 accueil : bannière", on: hero)
+        remote.press(.select)
+        guard primary.waitForExistence(timeout: 20) else {
+            throw XCTSkip("La vedette n'est pas un film (pas d'action principale).")
+        }
+        waitForFocus("G2 fiche : action principale", on: primary)
+        remote.press(.select)
+
+        waitForFocus("G2 torrents seuls : 1er torrent focalisé", timeout: 60, labelContains: "MockTorrent01")
+        assertTabBarNotFocused()
+        for _ in 1...11 { remote.press(.down) }
+        waitForFocus("G2 ▼×11 : dernier torrent atteint (défilement)", labelContains: "MockTorrent12")
+
+        remote.press(.menu)
+        waitForFocus("G2 retour fiche : action principale", on: primary)
+        XCTAssertEqual(app.state, .runningForeground)
     }
 
     // MARK: - Série : épisode → flux → retour sur le même épisode

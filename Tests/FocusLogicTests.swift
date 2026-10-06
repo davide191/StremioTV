@@ -1,8 +1,8 @@
 import XCTest
 @testable import StremioTV
 
-/// Logique de focus des écrans asynchrones (sans UI) : chaque phase doit
-/// désigner une cible focusable dans la page.
+/// Logique de focus des écrans asynchrones (sans UI) : chaque phase doit offrir
+/// un élément focusable dans la page, et le 1er flux focusable doit être lisible.
 final class FocusLogicTests: XCTestCase {
 
     func testLoadPhase() {
@@ -12,25 +12,19 @@ final class FocusLogicTests: XCTestCase {
         XCTAssertEqual(LoadPhase(hasContent: true, isFinished: true), .populated)
     }
 
-    func testLoadingLeavesFocusOnCancel() throws {
+    /// Liste mixte : seuls les flux lisibles sont focusables, donc le 1er
+    /// focusable (cible naturelle de tvOS) est le 1er flux lisible.
+    func testMixedListOnlyPlayableStreamsAreFocusable() throws {
         let list = try streams()
-        XCTAssertNil(StreamsFocusTarget.after(.loading, streams: list))
+        XCTAssertEqual(list.filter { StreamsListView.isFocusable($0, among: list) }.map(\.name), ["RealDebrid"])
     }
 
-    func testEmptyFocusesRetry() {
-        XCTAssertEqual(StreamsFocusTarget.after(.empty, streams: []), .retry)
-    }
-
-    func testPopulatedFocusesFirstPlayableStream() throws {
-        let list = try streams()
-        XCTAssertEqual(StreamsFocusTarget.after(.populated, streams: list), .stream(list[1].id))
-    }
-
-    /// Liste 100 % torrents : le 1er flux reste une cible (focusable même non
-    /// lisible), jamais `nil` — sinon le focus fuirait vers la barre d'onglets.
-    func testTorrentOnlyFocusesFirstStream() throws {
+    /// Torrents seuls : tout reste focusable — sinon la page n'aurait aucun
+    /// élément focusable et le focus fuirait vers la barre d'onglets.
+    func testTorrentOnlyListKeepsEveryStreamFocusable() throws {
         let torrents = try streams().filter { !$0.isDirectlyPlayable }
-        XCTAssertEqual(StreamsFocusTarget.after(.populated, streams: torrents), .stream(torrents[0].id))
+        XCTAssertEqual(torrents.count, 2)
+        XCTAssertTrue(torrents.allSatisfy { StreamsListView.isFocusable($0, among: torrents) })
     }
 
     private func streams() throws -> [StreamItem] {

@@ -25,12 +25,14 @@ Setups:
 | F | Streams loading | Debrid account, select Voir les sources | **Annuler** is focused immediately. Selecting it pops back to the detail. Menu also pops. |
 | G | Zero streams | Guest, any movie, Voir les sources | After loading, **Réessayer** is focused. Select it: Annuler, then Réessayer again. Menu pops to the detail with **Voir les sources** focused. |
 | G2 | Torrent-only | Torrent-only account, any title | Rows are dimmed but **focusable and scrollable** to the bottom. Clicking one does nothing. Menu pops. |
-| H | Populated streams | Debrid account | First **playable** stream focused (even if torrents are listed above it). |
+| H | Populated streams | Debrid account | First **playable** stream focused, even if torrents are listed above it. In a mixed list, ▲▼ skip the (disabled) torrent rows. |
 | I | Repeated push/pop | Home → detail → Menu → another poster → detail → Menu, ×5 | Each Menu lands on the poster you opened. The Home rows never blank out or reload. |
 | J | Player → back | From H, play, Menu to stop | Back on the stream list, with **the stream you played** focused. The list is not reloaded. Menu → detail (same episode row for a series). |
 | J2 | Next episode | Series, play, ▼ (next episode) inside the player, then Menu | Back on the stream list, focus inside the page. Menu → detail with focus inside the page. |
 | K | Tab switch mid-load | Open streams and immediately ▲ to the tab bar, switch tab, come back | The stream list loads normally (an interrupted search is not reported as "no streams"). |
 
-Automated coverage: `UITests/FocusNavigationUITests.swift` runs A, G and the
-Menu/restore part of I three times in the Apple TV simulator (guest mode, live
-network). `Tests/FocusLogicTests.swift` covers the phase and focus-target logic.
+Automated coverage (`.github/workflows/tvos-ci.yml`, Apple TV simulator, whole
+suite run 3× per CI run): `UITests/FocusNavigationUITests.swift` covers A, C, D,
+E, G, G2, H, I and J, using a local mock stream add-on for the populated and
+torrent-only cases. `Tests/FocusLogicTests.swift` covers the phase and
+focusability rules.
